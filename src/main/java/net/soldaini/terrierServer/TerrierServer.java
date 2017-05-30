@@ -203,9 +203,28 @@ public class TerrierServer {
         return makeSuccessResponse(response, responseResults);
     }
 
+    private String stats(Request request, Response response) {
+        CollectionStatistics stats = this.core.getCollectionStatistics();
+
+        Map <String, Object> statsMap = new HashMap<>();
+        statsMap.put("fields", stats.getNumberOfFields());
+        statsMap.put("fields_tokens", stats.getFieldTokens());
+        statsMap.put("fields_lengths", stats.getAverageFieldLengths());
+        statsMap.put("documents", stats.getNumberOfDocuments());
+        statsMap.put("tokens", stats.getNumberOfDocuments());
+        statsMap.put("pointers", stats.getNumberOfPointers());
+        statsMap.put("unique_terms", stats.getNumberOfUniqueTerms());
+        statsMap.put("average_length", stats.getAverageDocumentLength());
+
+        return makeSuccessResponse(response, statsMap);
+    }
+
     private void defineRoutes() {
         // this route is used to search documents
         post("/_search", this::search);
+
+        // this route returns stats about the index
+        get("/_stats", this::stats);
     }
 
     public static void main(String[] args) throws IOException, SAXException, ParserConfigurationException  {
