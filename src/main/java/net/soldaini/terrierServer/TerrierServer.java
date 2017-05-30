@@ -4,7 +4,9 @@ import java.io.*;
 import javax.xml.parsers.ParserConfigurationException;
 
 
+import com.google.common.collect.ImmutableMap;
 import com.sun.corba.se.spi.ior.ObjectKey;
+import it.unimi.dsi.fastutil.Hash;
 import org.json.JSONArray;
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
@@ -19,6 +21,7 @@ import org.terrier.querying.SearchRequest;
 import org.xml.sax.SAXException;
 import spark.Request;
 import spark.Response;
+import sun.jvm.hotspot.debugger.cdbg.Sym;
 
 import java.lang.String;
 import java.util.*;
@@ -41,12 +44,23 @@ class TerrierCore {
         stemmer = new org.terrier.terms.PorterStemmer();
     }
 
+    public CollectionStatistics getCollectionStatistics() {
+        return index.getCollectionStatistics();
+    }
+
     public void close() {
         try {
             index.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public ResultSet search(String queryString) {
+        String matchingModelName = "matching";
+        String weightingModelName = "BM25";
+        Map <String, Object> controls = new HashMap<>();
+        return this.search(queryString, matchingModelName, weightingModelName, controls);
     }
 
     public ResultSet search(
@@ -59,6 +73,13 @@ class TerrierCore {
         SearchRequest srq = queryingManager.newSearchRequestFromQuery(queryString);
         srq.addMatchingModel(matchingModelName, weightingModelName);
 
+        srq.setControl("decorate", "on");
+        int maxResults = (
+            Integer.parseInt((String) controls.getOrDefault("end", "1000")) -
+            Integer.parseInt((String) controls.getOrDefault("start", "0"))
+        );
+        srq.setNumberOfDocumentsAfterFiltering(maxResults);
+
         for (Map.Entry<String, Object> entry : controls.entrySet()) {
             srq.setControl(entry.getKey(), (String) entry.getValue());
         }
@@ -70,6 +91,7 @@ class TerrierCore {
         queryingManager.runPostFilters(srq);
 
         return srq.getResultSet();
+
     }
 
     public String [] getDocNames (int [] docIds) throws IOException {
@@ -160,7 +182,8 @@ public class TerrierServer {
 
         HashMap <String, Object> responseResults = new HashMap<>();
         responseResults.put("results", new ArrayList<HashMap>());
-        for (int i=0; i < results.getExactResultSize(); i++){
+
+        for (int i=0; i < results.getResultSize(); i++){
             HashMap <String, Object> result = new HashMap<>();
 
             String docName = "";
