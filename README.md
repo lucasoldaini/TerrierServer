@@ -24,14 +24,14 @@ Used to perform a search. Parameters:
 
 ```json 
 {
-    "query": "query goes here",
-    "matchingModelName": "matching model (e.g., 'Matching')",
-    "weightingModelName": "weighting model (e.g., 'PL2')",
+    "query": "",    // put the query string here
+    "matchingModelName": "Matching",
+    "weightingModelName": "PL2",  // or other models supported by Terriers
     "controls": {
-        ...
+        // add controls here
     },
     "properties": {
-        ...
+        // add properties here
     }
 }
 ```
@@ -42,7 +42,8 @@ Response:
 {
     "results": [
         {"_id":"clueweb12-1914wb-16-04060", "_score":3.67},
-        ...
+        {"_id":"clueweb12-1914wb-02-33676","_score":3.11}
+        // more results after this
     ]
 }
 ```
