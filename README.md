@@ -20,7 +20,7 @@ By default, server runs on `localhost` on port `4567`.
  
 ### `_search` – POST
 
-Used to perform a search. Parameters:
+Use to perform a search. Parameters:
 
 ```json 
 {
@@ -35,6 +35,8 @@ Used to perform a search. Parameters:
     }
 }
 ```
+
+Note: **all parameters are optional except "query".** If you omit a parameter, the default one specified in your `terrier.properties` file will be used. 
 
 Response:
 
