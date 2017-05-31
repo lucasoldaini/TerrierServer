@@ -8,6 +8,12 @@
     <artifactId>terrier-server</artifactId>
     <version>1.0</version>
     <dependencies>
+        <!-- https://mvnrepository.com/artifact/org.eclipse.jetty/jetty-server -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>9.3.19.v20170502</version>
+        </dependency>
         <dependency>
             <groupId>org.terrier</groupId>
             <artifactId>terrier-core</artifactId>
@@ -34,6 +40,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.6.1</version>
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
@@ -45,7 +52,8 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>net.soldaini.terrierServer</mainClass>
+                             <addClasspath>true</addClasspath>
+                            <mainClass>net.soldaini.terrierServer.TerrierServer</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
