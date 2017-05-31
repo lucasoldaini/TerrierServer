@@ -41,8 +41,8 @@ Response:
 ```json
 {
     "results": [
-        {"_id":"clueweb12-1914wb-16-04060", "_score":3.67},
-        {"_id":"clueweb12-1914wb-02-33676","_score":3.11}
+        {"_id": "clueweb12-1914wb-16-04060", "_score": 3.67},
+        {"_id": "clueweb12-1914wb-02-33676","_score": 3.11}
     ]
 }
 ```
