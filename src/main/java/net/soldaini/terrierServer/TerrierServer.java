@@ -2,27 +2,19 @@ package net.soldaini.terrierServer;
 
 import java.io.*;
 import javax.xml.parsers.ParserConfigurationException;
-
-
-import com.google.common.collect.ImmutableMap;
-import com.sun.corba.se.spi.ior.ObjectKey;
-import it.unimi.dsi.fastutil.Hash;
-import org.json.JSONArray;
 import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.json.JSONObject;
 import static spark.Spark.*;
-
 import org.terrier.matching.ResultSet;
 import org.terrier.querying.Manager;
 import org.terrier.structures.*;
 import org.terrier.querying.SearchRequest;
+import org.terrier.utility.ApplicationSetup;
 import org.xml.sax.SAXException;
 import spark.Request;
 import spark.Response;
-import sun.jvm.hotspot.debugger.cdbg.Sym;
-
 import java.lang.String;
 import java.util.*;
 
@@ -34,6 +26,7 @@ class TerrierCore {
     private MetaIndex metaIndex;
     private Lexicon<String> lex;
     private org.terrier.terms.PorterStemmer stemmer;
+    private HashMap <String, String> initialDefaultProperties;
 
     public TerrierCore(){
         index = Index.createIndex();
@@ -42,6 +35,27 @@ class TerrierCore {
         metaIndex = index.getMetaIndex();
         lex = index.getLexicon();
         stemmer = new org.terrier.terms.PorterStemmer();
+        initialDefaultProperties = new HashMap<>();
+
+        // as some of the properties specified in the application
+        // setup might change during computation (e.g. number of retrieved
+        // results @ query time), we preserve the original run properties
+        // here and restore them if changed during request
+
+        Properties defaultProperties = ApplicationSetup.getProperties();
+        Enumeration<String> propEnum = (Enumeration<String>) defaultProperties.propertyNames();
+        while (propEnum.hasMoreElements()) {
+            String propName = propEnum.nextElement();
+            initialDefaultProperties.put(propName, defaultProperties.getProperty(propName));
+        }
+    }
+
+    private void restoreProperties (Set <String> modifiedProperties) {
+        for (String propName : modifiedProperties) {
+            if (initialDefaultProperties.containsKey(propName)) {
+                ApplicationSetup.setProperty(propName, initialDefaultProperties.get(propName));
+            }
+        }
     }
 
     public CollectionStatistics getCollectionStatistics() {
@@ -60,28 +74,33 @@ class TerrierCore {
         String matchingModelName = "matching";
         String weightingModelName = "BM25";
         Map <String, Object> controls = new HashMap<>();
-        return this.search(queryString, matchingModelName, weightingModelName, controls);
+        Map <String, Object> properties = new HashMap<>();
+        return this.search(queryString, matchingModelName, weightingModelName, controls, properties);
     }
 
     public ResultSet search(
             String queryString,
             String matchingModelName,
             String weightingModelName,
-            Map<String, Object> controls
+            Map<String, Object> controls,
+            Map<String, Object> properties
     ){
         Manager queryingManager = new Manager(this.index);
         SearchRequest srq = queryingManager.newSearchRequestFromQuery(queryString);
         srq.addMatchingModel(matchingModelName, weightingModelName);
 
         srq.setControl("decorate", "on");
-        int maxResults = (
-            Integer.parseInt((String) controls.getOrDefault("end", "1000")) -
-            Integer.parseInt((String) controls.getOrDefault("start", "0"))
-        );
+        int maxResults = Integer.parseInt((String) controls.getOrDefault("end", "1000"));
         srq.setNumberOfDocumentsAfterFiltering(maxResults);
 
         for (Map.Entry<String, Object> entry : controls.entrySet()) {
             srq.setControl(entry.getKey(), (String) entry.getValue());
+        }
+
+        HashSet <String> modifiedProperties = new HashSet<>();
+        for (Map.Entry<String, Object> entry : properties.entrySet()) {
+            ApplicationSetup.setProperty(entry.getKey(), (String) entry.getValue());
+            modifiedProperties.add(entry.getKey());
         }
 
         // process the query
@@ -90,6 +109,10 @@ class TerrierCore {
         queryingManager.runPostProcessing(srq);
         queryingManager.runPostFilters(srq);
 
+        // restore properties if changed
+        restoreProperties(modifiedProperties);
+
+        // return results
         return srq.getResultSet();
 
     }
@@ -159,6 +182,11 @@ public class TerrierServer {
             controls = (HashMap<String, Object>) parsedBody.get("controls");
         }
 
+        HashMap <String, Object> properties = new HashMap<>();
+        if (parsedBody.containsKey("properties")) {
+            properties = (HashMap<String, Object>) parsedBody.get("properties");
+        }
+
         if (query == null){
             return makeErrorResponse(
                     response,
@@ -169,7 +197,7 @@ public class TerrierServer {
 
         ResultSet results = null;
         try {
-            results = core.search(query, matchingModelName, weightingModelName, controls);
+            results = core.search(query, matchingModelName, weightingModelName, controls, properties);
         } catch (Exception exec) {
             StringWriter errors = new StringWriter();
             exec.printStackTrace(new PrintWriter(errors));
@@ -245,7 +273,7 @@ public class TerrierServer {
         // start the server, define routes
         TerrierServer ts = new TerrierServer(ipAddressString, portNumber);
         ts.defineRoutes();
-        System.out.println("[info] Server started.");
+        System.out.println(String.format("[info] Server running at %s:%d", ipAddressString, portNumber));
 
         // gracefully handle sigterm
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -253,7 +281,7 @@ public class TerrierServer {
             public void run() {
                 spark.Spark.stop();
                 ts.core.close();
-                System.out.println("[info] Server stopped.");
+                System.out.println("[info] Server stopped");
             }
         });
     }
