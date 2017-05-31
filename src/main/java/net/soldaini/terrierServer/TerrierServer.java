@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.json.JSONObject;
-import static spark.Spark.*;
+import spark.Spark;
 import org.terrier.matching.ResultSet;
 import org.terrier.querying.Manager;
 import org.terrier.structures.*;
@@ -17,6 +17,7 @@ import spark.Request;
 import spark.Response;
 import java.lang.String;
 import java.util.*;
+import org.eclipse.jetty.http.pathmap.PathSpec;
 
 
 class TerrierCore {
@@ -27,6 +28,14 @@ class TerrierCore {
     private Lexicon<String> lex;
     private org.terrier.terms.PorterStemmer stemmer;
     private HashMap <String, String> initialDefaultProperties;
+
+    public String getProperty(String propName){
+        return initialDefaultProperties.get(propName);
+    }
+
+    public String getPropertyOrDefault(String propName, String defaultValue){
+        return initialDefaultProperties.getOrDefault(propName, defaultValue);
+    }
 
     public TerrierCore(){
         index = Index.createIndex();
@@ -42,11 +51,18 @@ class TerrierCore {
         // results @ query time), we preserve the original run properties
         // here and restore them if changed during request
 
-        Properties defaultProperties = ApplicationSetup.getProperties();
-        Enumeration<String> propEnum = (Enumeration<String>) defaultProperties.propertyNames();
+        Properties properties = ApplicationSetup.getProperties();
+        Enumeration<String> propEnum = (Enumeration<String>) properties.propertyNames();
         while (propEnum.hasMoreElements()) {
             String propName = propEnum.nextElement();
-            initialDefaultProperties.put(propName, defaultProperties.getProperty(propName));
+            initialDefaultProperties.put(propName, properties.getProperty(propName));
+        }
+
+        Properties usedProperties = ApplicationSetup.getUsedProperties();
+        Enumeration<String> usedPropEnum = (Enumeration<String>) usedProperties.propertyNames();
+        while (usedPropEnum.hasMoreElements()) {
+            String propName = usedPropEnum.nextElement();
+            initialDefaultProperties.put(propName, usedProperties.getProperty(propName));
         }
     }
 
@@ -147,8 +163,8 @@ public class TerrierServer {
     private TerrierCore core;
 
     public TerrierServer(String ipAddressString, int portNumber) {
-        port(portNumber);
-        ipAddress(ipAddressString);
+        Spark.port(portNumber);
+        Spark.ipAddress(ipAddressString);
         core = new TerrierCore();
     }
 
@@ -159,13 +175,13 @@ public class TerrierServer {
         return response.body();
     }
 
-    private String makeErrorResponse(Response response, String errorType, String errorMessage){
+    private String makeErrorResponse(Response response, String errorType, String errorMessage, int errorCode){
         Map<String,String> bodyMap = new HashMap<>();
         bodyMap.put(errorType, errorMessage);
         String bodyJson = (new JSONObject(bodyMap)).toString();
 
         response.body(bodyJson);
-        response.status(501);
+        response.status(errorCode);
         return response.body();
     }
 
@@ -191,7 +207,8 @@ public class TerrierServer {
             return makeErrorResponse(
                     response,
                     "RequestMalformedException",
-                    "Query is missing from request"
+                    "Query is missing from request",
+                    501
             );
         }
 
@@ -203,7 +220,7 @@ public class TerrierServer {
             exec.printStackTrace(new PrintWriter(errors));
             String stackTraceString = errors.toString();
             System.err.print(stackTraceString);
-            return makeErrorResponse(response, exec.getClass().getName(), stackTraceString);
+            return makeErrorResponse(response, exec.getClass().getName(), stackTraceString, 501);
         }
         int [] resultsDocIds = results.getDocids();
         double [] resultsDocScores = results.getScores();
@@ -220,7 +237,7 @@ public class TerrierServer {
             } catch (IOException exec) {
                 StringWriter errors = new StringWriter();
                 exec.printStackTrace(new PrintWriter(errors));
-                return makeErrorResponse(response, exec.getClass().getName(), errors.toString());
+                return makeErrorResponse(response, exec.getClass().getName(), errors.toString(), 501);
             }
 
             result.put("_id", docName);
@@ -247,12 +264,26 @@ public class TerrierServer {
         return makeSuccessResponse(response, statsMap);
     }
 
+    private String endpointNotFound (Request request, Response response){
+        return makeErrorResponse(
+            response,
+            "EndpointNotFound",
+            "This endpoint does not exist",
+            404
+        );
+    }
+
     private void defineRoutes() {
         // this route is used to search documents
-        post("/_search", this::search);
+        Spark.post("/_search", this::search);
 
         // this route returns stats about the index
-        get("/_stats", this::stats);
+        Spark.get("/_stats", this::stats);
+
+        // this route handles all other endpoints
+        // THIS ROUTE MUST BE THE LAST ONE
+        Spark.get("*", this::endpointNotFound);
+
     }
 
     public static void main(String[] args) throws IOException, SAXException, ParserConfigurationException  {
@@ -264,10 +295,10 @@ public class TerrierServer {
         String ipAddressString = "localhost";
         int portNumber = 4567;
         if(args.length > 0) {
-            ipAddressString = args[1];
+            ipAddressString = args[0];
         }
-        if(args.length > 2) {
-            portNumber = Integer.parseInt(args[2]);
+        if(args.length > 1) {
+            portNumber = Integer.parseInt(args[1]);
         }
 
         // start the server, define routes
